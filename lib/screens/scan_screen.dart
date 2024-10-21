@@ -26,11 +26,15 @@ class _ScanPageState extends State<ScanPage> {
   StreamSubscription<List<ScanResult>>? scanSubscription;
   StreamSubscription<bool>? isScanningSubscription;
   Stream<List<int>>? characteristicStream;
+  StreamSubscription<BluetoothConnectionState>? deviceStateSubscription;  // Updated type
+
+  BluetoothCharacteristic? writeCharacteristic;  // Store the writeable characteristic
 
   @override
   void dispose() {
     scanSubscription?.cancel();
     isScanningSubscription?.cancel();
+    deviceStateSubscription?.cancel();  // Clean up device state listener
     characteristicStream = null;
     super.dispose();
   }
@@ -119,18 +123,47 @@ class _ScanPageState extends State<ScanPage> {
       bleConnectionStatus.value = true;
       widget.onConnect();  // Notify home screen that the device is connected
 
+      // Listen for device disconnection events
+      _listenForDisconnection(device);
+
       services = await device.discoverServices();
 
       for (var service in services) {
         for (var characteristic in service.characteristics) {
           if (characteristic.properties.notify) {
-            _subscribeToCharacteristic(characteristic);
+            _subscribeToCharacteristic(characteristic);  // Subscribe to notifications
+          }
+
+          if (characteristic.properties.write) {
+            writeCharacteristic = characteristic;  // Store the writeable characteristic
+            print('Found writeable characteristic: ${characteristic.uuid}');
           }
         }
       }
     } catch (e) {
       print('Error connecting to device: $e');
     }
+  }
+
+  // Listen for disconnection events
+  void _listenForDisconnection(BluetoothDevice device) {
+    deviceStateSubscription = device.connectionState.listen((state) {
+      if (state == BluetoothConnectionState.disconnected) {  // Corrected condition
+        print('Device disconnected.');
+        bleConnectionStatus.value = false;  // Update status to disconnected
+        _disconnectDevice();  // Clean up state
+      }
+    });
+  }
+
+  // Handle device disconnection and clean up state
+  Future<void> _disconnectDevice() async {
+    setState(() {
+      connectedDevice = null;
+      services.clear();
+      characteristicStream = null;
+    });
+    deviceStateSubscription?.cancel();  // Clean up device state listener
   }
 
   Future<void> _subscribeToCharacteristic(
@@ -145,6 +178,9 @@ class _ScanPageState extends State<ScanPage> {
 
       if (receivedString.isNotEmpty && receivedString.trim() != '') {
         _saveKickData(receivedString);
+
+        // Send current time to the BLE device after receiving data
+        _sendCurrentTimeToDevice();
       } else {
         print('Received null or empty data. Skipping save.');
       }
@@ -159,5 +195,24 @@ class _ScanPageState extends State<ScanPage> {
     // After saving, update the kick count in the notifier
     int currentCount = kickCountNotifier.value;
     kickCountNotifier.value = currentCount + 1;  // Increment kick count
+  }
+
+  // Method to send the current time to the BLE device
+  Future<void> _sendCurrentTimeToDevice() async {
+    if (writeCharacteristic == null) {
+      print('No writeable characteristic found!');
+      return;
+    }
+
+    // Get the current time and send it to the BLE device
+    String currentTime = DateTime.now().toIso8601String();
+    List<int> timeBytes = utf8.encode(currentTime);  // Convert the time to bytes
+
+    try {
+      await writeCharacteristic!.write(timeBytes);  // Write the time to the characteristic
+      print('Sent current time to BLE device: $currentTime');
+    } catch (e) {
+      print('Failed to send time to device: $e');
+    }
   }
 }

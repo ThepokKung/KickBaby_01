@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';  // Import SharedPreferences
 import '../helper/database_helper.dart';
 import 'package:intl/intl.dart';
 import 'scan_screen.dart';  // Import to access bleConnectionStatus and kickCountNotifier
@@ -12,15 +13,18 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   List<Map<String, dynamic>> kickData = [];
+  int dailyKickCount = 0;
 
   @override
   void initState() {
     super.initState();
     _loadKickData();
+    _checkDailyReset();
 
     // Listen to changes in the kick count and reload data when updated
     kickCountNotifier.addListener(() {
       _loadKickData();  // Reload data when a new kick is saved
+      _incrementDailyCount();  // Increment the daily count
     });
   }
 
@@ -31,14 +35,44 @@ class _HomePageState extends State<HomePage> {
     });
   }
 
+  Future<void> _checkDailyReset() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    String? lastDate = prefs.getString('last_date');  // Get the last stored date
+    String today = DateFormat('yyyy-MM-dd').format(DateTime.now());  // Get today's date
+
+    // Check if the app was last opened on a different day
+    if (lastDate == null || lastDate != today) {
+      // If it's a new day, reset the daily count
+      setState(() {
+        dailyKickCount = 0;
+      });
+      // Save today's date
+      await prefs.setString('last_date', today);
+    } else {
+      // If it's the same day, load the daily count
+      int? storedDailyCount = prefs.getInt('daily_count');
+      setState(() {
+        dailyKickCount = storedDailyCount ?? 0;
+      });
+    }
+  }
+
+  Future<void> _incrementDailyCount() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    setState(() {
+      dailyKickCount += 1;
+    });
+    // Save the updated daily count
+    await prefs.setInt('daily_count', dailyKickCount);
+  }
+
   @override
   Widget build(BuildContext context) {
     int count = kickData.length;
     String lastTimestamp = 'No data';
     if (count > 0) {
       DateTime parsedTimestamp = DateTime.parse(kickData.first['timestamp']);
-      lastTimestamp = DateFormat('yyyy-MM-dd HH:mm:ss')
-          .format(parsedTimestamp); // Custom format
+      lastTimestamp = DateFormat('yyyy-MM-dd HH:mm:ss').format(parsedTimestamp); // Custom format
     }
 
     return Scaffold(
@@ -88,14 +122,16 @@ class _HomePageState extends State<HomePage> {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        const Text('Count:', style: TextStyle(fontSize: 16)),
-                        // Listen to the kickCountNotifier to update count in real-time
-                        ValueListenableBuilder<int>(
-                          valueListenable: kickCountNotifier,
-                          builder: (context, kickCount, child) {
-                            return Text(kickCount.toString(), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold));
-                          },
-                        ),
+                        const Text('Total Count:', style: TextStyle(fontSize: 16)),
+                        Text(count.toString(), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                      ],
+                    ),
+                    const SizedBox(height: 5),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text('Daily Count:', style: TextStyle(fontSize: 16)),
+                        Text(dailyKickCount.toString(), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                       ],
                     ),
                     const SizedBox(height: 20),
