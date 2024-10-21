@@ -1,43 +1,45 @@
 import 'package:flutter/material.dart';
+import '../helper/database_helper.dart';
 import 'package:intl/intl.dart';
 
-/* Models Here */
-import '../models/kick.dart';
-
-/* Image Here */
-// import '../Image/icon_1.png';
-
-// Fake data to be displayed in the second page
-final List<Kick> demoData = [
-  Kick("10:15:30", 1),
-  Kick("12:45:20", 1),
-  Kick("11:15:30", 1),
-  Kick("13:45:20", 1),
-  Kick("15:45:20", 1),
-  Kick("19:45:20", 1),
-  Kick("18:45:20", 1),
-  Kick("16:45:20", 1),
-  Kick("17:45:20", 1),
-];
-
-class HomePage extends StatelessWidget {
+class HomePage extends StatefulWidget {
   const HomePage({Key? key}) : super(key: key);
 
   @override
+  _HomePageState createState() => _HomePageState();
+}
+
+class _HomePageState extends State<HomePage> {
+  List<Map<String, dynamic>> kickData = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadKickData();
+  }
+
+  Future<void> _loadKickData() async {
+    List<Map<String, dynamic>> data = await DatabaseHelper().getKicks();
+    setState(() {
+      kickData = data;
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
-    // Getting the last timestamp from the demoData
-    String lastTimestamp = demoData.last.timestamps;
-    // Getting the current count of timestamps
-    int count = demoData.length;
-    // Getting the current time
-    DateTime currentTime = DateTime.now();
-    String formattedDate = DateFormat('yy-MM-dd HH:mm:ss').format(currentTime);
+    // Count of timestamps in kickData
+    int count = kickData.length;
+    // If there is data, parse the last timestamp and format it
+    String lastTimestamp = 'No data';
+    if (count > 0) {
+      DateTime parsedTimestamp = DateTime.parse(kickData.first['timestamp']);
+      lastTimestamp = DateFormat('yyyy-MM-dd HH:mm:ss')
+          .format(parsedTimestamp); // Custom format
+    }
 
     return Scaffold(
       appBar: AppBar(
-        title: Center(
-          child: const Text('User Info Page'),
-        ),
+        title: Center(child: const Text('User Info Page')),
       ),
       body: Stack(
         children: [
@@ -61,12 +63,12 @@ class HomePage extends StatelessWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     // Picture (User Avatar)
-                    CircleAvatar(
+                    const CircleAvatar(
                       radius: 50,
                       backgroundImage: AssetImage("lib/Image/icon_1.png"),
                     ),
                     const SizedBox(height: 10),
-                    // Name of User (Static or dynamic)
+                    // Name of User
                     const Text(
                       'Mommy',
                       style: TextStyle(
@@ -79,17 +81,11 @@ class HomePage extends StatelessWidget {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        const Text(
-                          'Last Timestamp:',
-                          style: TextStyle(fontSize: 16),
-                        ),
-                        Text(
-                          lastTimestamp,
-                          style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
+                        const Text('Last Timestamp:',
+                            style: TextStyle(fontSize: 16)),
+                        Text(lastTimestamp,
+                            style: const TextStyle(
+                                fontSize: 16, fontWeight: FontWeight.bold)),
                       ],
                     ),
                     const SizedBox(height: 5),
@@ -97,53 +93,28 @@ class HomePage extends StatelessWidget {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        const Text(
-                          'Count:',
-                          style: TextStyle(fontSize: 16),
-                        ),
-                        Text(
-                          count.toString(),
-                          style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 5),
-                    // Current time
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text(
-                          'Current Time:',
-                          style: TextStyle(fontSize: 16),
-                        ),
-                        Text(
-                          // currentTime.toString(),
-                          formattedDate,
-                          style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
+                        const Text('Count:', style: TextStyle(fontSize: 16)),
+                        Text(count.toString(),
+                            style: const TextStyle(
+                                fontSize: 16, fontWeight: FontWeight.bold)),
                       ],
                     ),
                     const SizedBox(height: 20),
-                    // Button to navigate to third page
+                    // Button to navigate to scan BLE page
                     ElevatedButton(
                       onPressed: () {
-                        Navigator.pushNamed(context, '/home'); //FIX
+                        Navigator.pushNamed(context, '/ble_scan').then((_) {
+                          _loadKickData(); // Reload kickData after returning from BLE scan
+                        });
                       },
-                      child: const Text('Update with BLE'),
+                      child: const Text('Scan BLE for update'),
                     ),
                     const SizedBox(height: 20),
-                    // Button to navigate to third page
                     ElevatedButton(
                       onPressed: () {
-                        Navigator.pushNamed(context, '/second');
+                        Navigator.pushNamed(context, '/data'); // Navigate to DataPage
                       },
-                      child: const Text('Go to Third Page'),
+                      child: const Text('View All Data'),
                     ),
                   ],
                 ),

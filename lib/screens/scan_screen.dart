@@ -1,160 +1,132 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
+import '../helper/database_helper.dart';
 
-import 'device_screen.dart';
-import '../utils/snackbar.dart';
-import '../widgets/system_device_tile.dart';
-import '../widgets/scan_result_tile.dart';
-import '../utils/extra.dart';
-
-class ScanScreen extends StatefulWidget {
-  const ScanScreen({Key? key}) : super(key: key);
+class ScanPage extends StatefulWidget {
+  const ScanPage({super.key});
 
   @override
-  State<ScanScreen> createState() => _ScanScreenState();
+  State<ScanPage> createState() => _ScanPageState();
 }
 
-class _ScanScreenState extends State<ScanScreen> {
-  List<BluetoothDevice> _systemDevices = [];
-  List<ScanResult> _scanResults = [];
-  bool _isScanning = false;
-  late StreamSubscription<List<ScanResult>> _scanResultsSubscription;
-  late StreamSubscription<bool> _isScanningSubscription;
-
-  @override
-  void initState() {
-    super.initState();
-
-    _scanResultsSubscription = FlutterBluePlus.scanResults.listen((results) {
-      _scanResults = results;
-      if (mounted) {
-        setState(() {});
-      }
-    }, onError: (e) {
-      Snackbar.show(ABC.b, prettyException("Scan Error:", e), success: false);
-    });
-
-    _isScanningSubscription = FlutterBluePlus.isScanning.listen((state) {
-      _isScanning = state;
-      if (mounted) {
-        setState(() {});
-      }
-    });
-  }
-
-  @override
-  void dispose() {
-    _scanResultsSubscription.cancel();
-    _isScanningSubscription.cancel();
-    super.dispose();
-  }
-
-  Future onScanPressed() async {
-    try {
-      // `withServices` is required on iOS for privacy purposes, ignored on android.
-      var withServices = [Guid("180f")]; // Battery Level Service
-      _systemDevices = await FlutterBluePlus.systemDevices(withServices);
-    } catch (e) {
-      Snackbar.show(ABC.b, prettyException("System Devices Error:", e), success: false);
-    }
-    try {
-      await FlutterBluePlus.startScan(timeout: const Duration(seconds: 15));
-    } catch (e) {
-      Snackbar.show(ABC.b, prettyException("Start Scan Error:", e), success: false);
-    }
-    if (mounted) {
-      setState(() {});
-    }
-  }
-
-  Future onStopPressed() async {
-    try {
-      FlutterBluePlus.stopScan();
-    } catch (e) {
-      Snackbar.show(ABC.b, prettyException("Stop Scan Error:", e), success: false);
-    }
-  }
-
-  void onConnectPressed(BluetoothDevice device) {
-    device.connectAndUpdateStream().catchError((e) {
-      Snackbar.show(ABC.c, prettyException("Connect Error:", e), success: false);
-    });
-    MaterialPageRoute route = MaterialPageRoute(
-        builder: (context) => DeviceScreen(device: device), settings: RouteSettings(name: '/DeviceScreen'));
-    Navigator.of(context).push(route);
-  }
-
-  Future onRefresh() {
-    if (_isScanning == false) {
-      FlutterBluePlus.startScan(timeout: const Duration(seconds: 15));
-    }
-    if (mounted) {
-      setState(() {});
-    }
-    return Future.delayed(Duration(milliseconds: 500));
-  }
-
-  Widget buildScanButton(BuildContext context) {
-    if (FlutterBluePlus.isScanningNow) {
-      return FloatingActionButton(
-        child: const Icon(Icons.stop),
-        onPressed: onStopPressed,
-        backgroundColor: Colors.red,
-      );
-    } else {
-      return FloatingActionButton(child: const Text("SCAN"), onPressed: onScanPressed);
-    }
-  }
-
-  List<Widget> _buildSystemDeviceTiles(BuildContext context) {
-    return _systemDevices
-        .map(
-          (d) => SystemDeviceTile(
-            device: d,
-            onOpen: () => Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (context) => DeviceScreen(device: d),
-                settings: RouteSettings(name: '/DeviceScreen'),
-              ),
-            ),
-            onConnect: () => onConnectPressed(d),
-          ),
-        )
-        .toList();
-  }
-
-  List<Widget> _buildScanResultTiles(BuildContext context) {
-    return _scanResults
-        .map(
-          (r) => ScanResultTile(
-            result: r,
-            onTap: () => onConnectPressed(r.device),
-          ),
-        )
-        .toList();
-  }
+class _ScanPageState extends State<ScanPage> {
+  List<ScanResult> scanResults = [];
+  bool isScanning = false;
+  BluetoothDevice? connectedDevice;
+  List<BluetoothService> services = [];
+  Stream<List<int>>? characteristicStream;
 
   @override
   Widget build(BuildContext context) {
-    return ScaffoldMessenger(
-      key: Snackbar.snackBarKeyB,
-      child: Scaffold(
-        appBar: AppBar(
-          title: const Text('Find Devices'),
-        ),
-        body: RefreshIndicator(
-          onRefresh: onRefresh,
-          child: ListView(
-            children: <Widget>[
-              ..._buildSystemDeviceTiles(context),
-              ..._buildScanResultTiles(context),
-            ],
-          ),
-        ),
-        floatingActionButton: buildScanButton(context),
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Scan for Devices'),
+      ),
+      body: isScanning
+          ? const Center(child: CircularProgressIndicator())
+          : ListView.builder(
+              itemCount: scanResults.length,
+              itemBuilder: (context, index) {
+                final device = scanResults[index].device;
+                return ListTile(
+                  title: Text(device.name.isNotEmpty ? device.name : 'Unknown Device'),
+                  subtitle: Text(device.id.toString()),
+                  trailing: ElevatedButton(
+                    onPressed: () => _connectToDevice(device),
+                    child: const Text('Connect'),
+                  ),
+                );
+              },
+            ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () {
+          if (isScanning) {
+            stopScan();
+          } else {
+            startScan();
+          }
+        },
+        child: Icon(isScanning ? Icons.stop : Icons.search),
       ),
     );
+  }
+
+  Future<void> startScan() async {
+    FlutterBluePlus.startScan(timeout: const Duration(seconds: 4));
+    setState(() {
+      isScanning = true;
+    });
+
+    FlutterBluePlus.scanResults.listen((results) {
+      setState(() {
+        scanResults = results;
+      });
+    });
+
+    FlutterBluePlus.isScanning.listen((isScanning) {
+      if (!isScanning) {
+        setState(() {
+          this.isScanning = false;
+        });
+      }
+    });
+  }
+
+  Future<void> stopScan() async {
+    await FlutterBluePlus.stopScan();
+    setState(() {
+      isScanning = false;
+    });
+  }
+
+  Future<void> _connectToDevice(BluetoothDevice device) async {
+    setState(() {
+      connectedDevice = device;
+    });
+
+    // Connect to the device
+    await device.connect();
+    print('Connected to ${device.name}');
+
+    // Discover services and characteristics
+    services = await device.discoverServices();
+
+    // Find a characteristic to subscribe to
+    for (var service in services) {
+      for (var characteristic in service.characteristics) {
+        if (characteristic.properties.notify) {
+          _subscribeToCharacteristic(characteristic);
+        }
+      }
+    }
+  }
+
+  Future<void> _subscribeToCharacteristic(BluetoothCharacteristic characteristic) async {
+    // Subscribe to characteristic notifications
+    await characteristic.setNotifyValue(true);
+
+    // Listen for incoming data from the characteristic
+    characteristicStream = characteristic.value;
+
+    characteristicStream!.listen((data) {
+      String receivedString = String.fromCharCodes(data);
+      print('Received data: $receivedString');
+
+      // Check if data is not null or empty before saving
+      if (receivedString.isNotEmpty && receivedString.trim() != '') {
+        _saveKickData(receivedString);
+      } else {
+        print('Received null or empty data. Skipping save.');
+      }
+    });
+  }
+
+  Future<void> _saveKickData(String data) async {
+    String timestamp = DateTime.now().toIso8601String();
+    
+    // Save to SQLite database only if data is valid
+    await DatabaseHelper().insertKick(data, timestamp);
+
+    print('Data saved: $data at $timestamp');
   }
 }
