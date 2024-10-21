@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
+import 'package:shared_preferences/shared_preferences.dart';  // Import shared_preferences
 import '../helper/database_helper.dart';
 
 class ScanPage extends StatefulWidget {
@@ -15,6 +16,12 @@ class _ScanPageState extends State<ScanPage> {
   BluetoothDevice? connectedDevice;
   List<BluetoothService> services = [];
   Stream<List<int>>? characteristicStream;
+
+  @override
+  void initState() {
+    super.initState();
+    startAutoReconnectScan();  // Start auto-reconnect when the app initializes
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -79,40 +86,61 @@ class _ScanPageState extends State<ScanPage> {
     });
   }
 
+  // Save the connected device ID to SharedPreferences
+  Future<void> _saveDeviceId(String deviceId) async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.setString('connectedDeviceId', deviceId);
+  }
+
+  // Load the saved device ID from SharedPreferences
+  Future<String?> _loadSavedDeviceId() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    return prefs.getString('connectedDeviceId');
+  }
+
   Future<void> _connectToDevice(BluetoothDevice device) async {
     setState(() {
       connectedDevice = device;
     });
 
-    // Connect to the device
-    await device.connect();
-    print('Connected to ${device.name}');
+    // Listen for device disconnection events
+    device.state.listen((state) {
+      if (state == BluetoothDeviceState.disconnected) {
+        _handleDisconnection();
+      }
+    });
 
-    // Discover services and characteristics
-    services = await device.discoverServices();
+    try {
+      await device.connect();
+      print('Connected to ${device.name}');
 
-    // Find a characteristic to subscribe to
-    for (var service in services) {
-      for (var characteristic in service.characteristics) {
-        if (characteristic.properties.notify) {
-          _subscribeToCharacteristic(characteristic);
+      // Save the device ID (MAC address)
+      await _saveDeviceId(device.id.id);
+
+      // Discover services and characteristics
+      services = await device.discoverServices();
+
+      for (var service in services) {
+        for (var characteristic in service.characteristics) {
+          if (characteristic.properties.notify) {
+            _subscribeToCharacteristic(characteristic);
+          }
         }
       }
+    } catch (e) {
+      print('Error connecting to device: $e');
+      _handleDisconnection();
     }
   }
 
   Future<void> _subscribeToCharacteristic(BluetoothCharacteristic characteristic) async {
-    // Subscribe to characteristic notifications
     await characteristic.setNotifyValue(true);
 
-    // Listen for incoming data from the characteristic
     characteristicStream = characteristic.value;
-
     characteristicStream!.listen((data) {
       String receivedString = String.fromCharCodes(data);
       print('Received data: $receivedString');
 
-      // Check if data is not null or empty before saving
       if (receivedString.isNotEmpty && receivedString.trim() != '') {
         _saveKickData(receivedString);
       } else {
@@ -123,10 +151,42 @@ class _ScanPageState extends State<ScanPage> {
 
   Future<void> _saveKickData(String data) async {
     String timestamp = DateTime.now().toIso8601String();
-    
-    // Save to SQLite database only if data is valid
     await DatabaseHelper().insertKick(data, timestamp);
-
     print('Data saved: $data at $timestamp');
+  }
+
+  // Start auto-reconnect scanning for the saved device
+  Future<void> startAutoReconnectScan() async {
+    String? savedDeviceId = await _loadSavedDeviceId();
+    if (savedDeviceId == null) {
+      print('No saved device to reconnect to.');
+      return;
+    }
+
+    print('Starting auto-reconnect scan for saved device: $savedDeviceId');
+    FlutterBluePlus.startScan(timeout: const Duration(seconds: 4));
+
+    FlutterBluePlus.scanResults.listen((results) {
+      for (ScanResult result in results) {
+        if (result.device.id.id == savedDeviceId) {
+          print('Found saved device: ${result.device.name}');
+          FlutterBluePlus.stopScan();
+          _connectToDevice(result.device);
+          break;
+        }
+      }
+    });
+  }
+
+  void _handleDisconnection() {
+    print('Device disconnected.');
+    setState(() {
+      connectedDevice = null;
+      services.clear();
+      characteristicStream = null;
+    });
+
+    // Start scanning to reconnect the device after disconnection
+    startAutoReconnectScan();
   }
 }
