@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../helper/database_helper.dart';
 import 'package:intl/intl.dart';
+import 'scan_screen.dart';  // Import to access bleConnectionStatus and kickCountNotifier
 
 class HomePage extends StatefulWidget {
   const HomePage({Key? key}) : super(key: key);
@@ -16,6 +17,11 @@ class _HomePageState extends State<HomePage> {
   void initState() {
     super.initState();
     _loadKickData();
+
+    // Listen to changes in the kick count and reload data when updated
+    kickCountNotifier.addListener(() {
+      _loadKickData();  // Reload data when a new kick is saved
+    });
   }
 
   Future<void> _loadKickData() async {
@@ -27,9 +33,7 @@ class _HomePageState extends State<HomePage> {
 
   @override
   Widget build(BuildContext context) {
-    // Count of timestamps in kickData
     int count = kickData.length;
-    // If there is data, parse the last timestamp and format it
     String lastTimestamp = 'No data';
     if (count > 0) {
       DateTime parsedTimestamp = DateTime.parse(kickData.first['timestamp']);
@@ -39,17 +43,15 @@ class _HomePageState extends State<HomePage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Center(child: const Text('User Info Page')),
+        title: const Text('User Info Page'),
       ),
       body: Stack(
         children: [
-          // Background
           Container(
             width: double.infinity,
             height: double.infinity,
             color: Colors.lightBlue[100],
           ),
-          // Floating card
           Center(
             child: Card(
               elevation: 8,
@@ -62,13 +64,11 @@ class _HomePageState extends State<HomePage> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    // Picture (User Avatar)
                     const CircleAvatar(
                       radius: 50,
                       backgroundImage: AssetImage("lib/Image/icon_1.png"),
                     ),
                     const SizedBox(height: 10),
-                    // Name of User
                     const Text(
                       'Mommy',
                       style: TextStyle(
@@ -77,34 +77,46 @@ class _HomePageState extends State<HomePage> {
                       ),
                     ),
                     const SizedBox(height: 10),
-                    // Last timestamp
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        const Text('Last Timestamp:',
-                            style: TextStyle(fontSize: 16)),
-                        Text(lastTimestamp,
-                            style: const TextStyle(
-                                fontSize: 16, fontWeight: FontWeight.bold)),
+                        const Text('Last Timestamp:', style: TextStyle(fontSize: 16)),
+                        Text(lastTimestamp, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                       ],
                     ),
                     const SizedBox(height: 5),
-                    // Count of timestamps
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         const Text('Count:', style: TextStyle(fontSize: 16)),
-                        Text(count.toString(),
-                            style: const TextStyle(
-                                fontSize: 16, fontWeight: FontWeight.bold)),
+                        // Listen to the kickCountNotifier to update count in real-time
+                        ValueListenableBuilder<int>(
+                          valueListenable: kickCountNotifier,
+                          builder: (context, kickCount, child) {
+                            return Text(kickCount.toString(), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold));
+                          },
+                        ),
                       ],
                     ),
                     const SizedBox(height: 20),
-                    // Button to navigate to scan BLE page
+                    ValueListenableBuilder<bool>(
+                      valueListenable: bleConnectionStatus,  // Listen to connection status
+                      builder: (context, isConnected, child) {
+                        return Text(
+                          isConnected ? 'BLE Device Connected' : 'BLE Device Disconnected',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: isConnected ? Colors.green : Colors.red,
+                          ),
+                        );
+                      },
+                    ),
+                    const SizedBox(height: 20),
                     ElevatedButton(
                       onPressed: () {
                         Navigator.pushNamed(context, '/ble_scan').then((_) {
-                          _loadKickData(); // Reload kickData after returning from BLE scan
+                          _loadKickData();  // Reload kickData after returning from BLE scan
                         });
                       },
                       child: const Text('Scan BLE for update'),
