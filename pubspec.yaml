@@ -41,6 +41,7 @@ dependencies:
   path_provider: ^2.1.4
   sqflite: ^2.4.0
   shared_preferences: ^2.3.2
+  flutter_launcher_icons: ^0.14.1
 
 dev_dependencies:
   flutter_test:
@@ -76,6 +77,23 @@ flutter_intl:
     download_exclude_tags: # Optional list of tags to be excluded from download (e.g. ['exclude', 'Exclude key']). If not set, all string keys will be considered for download. Default: []
     ota_enabled: # Set to true if you want to use Localizely Over-the-air functionality. Default: false
 
+flutter_launcher_icons:
+  android: "launcher_icon"
+  ios: true
+  image_path: "lib/Image/icon_1.png"
+  min_sdk_android: 21 # android min sdk min:16, default 21
+  # web:
+  #   generate: true
+  #   image_path: "path/to/image.png"
+  #   background_color: "#hexcode"
+  #   theme_color: "#hexcode"
+  # windows:
+  #   generate: true
+  #   image_path: "path/to/image.png"
+  #   icon_size: 48 # min:48, max:256, default: 48
+  # macos:
+  #   generate: true
+  #   image_path: "path/to/image.png"
 
 # The following section is specific to Flutter packages.
 flutter:
