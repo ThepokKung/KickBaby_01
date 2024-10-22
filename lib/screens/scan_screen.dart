@@ -10,6 +10,73 @@ ValueNotifier<bool> bleConnectionStatus = ValueNotifier<bool>(false);
 // Global ValueNotifier to track Kick Count
 ValueNotifier<int> kickCountNotifier = ValueNotifier<int>(0);
 
+void main() {
+  runApp(MyApp());
+}
+
+class MyApp extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'BLE Scan and Connect',
+      theme: ThemeData(
+        primarySwatch: Colors.blue,
+      ),
+      home: HomeScreen(),
+    );
+  }
+}
+
+class HomeScreen extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('BLE Device Connection'),
+      ),
+      body: Column(
+        children: [
+          Expanded(
+            child: ScanPage(
+              onConnect: () {
+                // Handle connection logic when BLE is connected
+                print("Device connected");
+              },
+            ),
+          ),
+          ValueListenableBuilder<bool>(
+            valueListenable: bleConnectionStatus,
+            builder: (context, isConnected, child) {
+              return Padding(
+                padding: const EdgeInsets.all(8.0),
+                child: Text(
+                  isConnected ? 'Connected to Device' : 'Not Connected',
+                  style: TextStyle(
+                    color: isConnected ? Colors.green : Colors.red,
+                    fontSize: 20,
+                  ),
+                ),
+              );
+            },
+          ),
+          ValueListenableBuilder<int>(
+            valueListenable: kickCountNotifier,
+            builder: (context, kickCount, child) {
+              return Padding(
+                padding: const EdgeInsets.all(8.0),
+                child: Text(
+                  'Kick Count: $kickCount',
+                  style: TextStyle(fontSize: 20),
+                ),
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class ScanPage extends StatefulWidget {
   final VoidCallback onConnect; // Callback to notify when BLE connects
 
@@ -164,11 +231,13 @@ class _ScanPageState extends State<ScanPage> {
 
   // Listen for disconnection events
   void _listenForDisconnection(BluetoothDevice device) {
-    deviceStateSubscription = device.connectionState.listen((state) {
+    deviceStateSubscription = device.connectionState.listen((state) async {
       if (state == BluetoothConnectionState.disconnected) {
         print('Device disconnected.');
-        bleConnectionStatus.value = false; // Update status to disconnected
-        _disconnectDevice(); // Clean up state
+        bleConnectionStatus.value = false; // Notify disconnection
+
+        // Clean up after disconnection
+        _disconnectDevice();
       }
     });
   }

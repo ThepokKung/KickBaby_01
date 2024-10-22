@@ -1,8 +1,10 @@
+import 'dart:async'; // Import Timer package
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';  // Import SharedPreferences
+import 'package:shared_preferences/shared_preferences.dart'; // Import SharedPreferences
 import '../helper/database_helper.dart';
 import 'package:intl/intl.dart';
-import 'scan_screen.dart';  // Import to access bleConnectionStatus and kickCountNotifier
+import 'scan_screen.dart'; // Import to access bleConnectionStatus and kickCountNotifier
+import 'package:flutter_blue_plus/flutter_blue_plus.dart'; // Import Flutter Blue Plus for Bluetooth handling
 
 class HomePage extends StatefulWidget {
   const HomePage({Key? key}) : super(key: key);
@@ -14,6 +16,8 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> {
   List<Map<String, dynamic>> kickData = [];
   int dailyKickCount = 0;
+  Timer? _bleTimer; // Declare a Timer variable
+  BluetoothDevice? _connectedDevice; // Keep track of the connected device
 
   @override
   void initState() {
@@ -21,11 +25,76 @@ class _HomePageState extends State<HomePage> {
     _loadKickData();
     _checkDailyReset();
 
+    // Set up a periodic check for the BLE connection status
+    _bleTimer = Timer.periodic(Duration(seconds: 10), (timer) {
+      _checkBleConnectionStatus();
+    });
+
     // Listen to changes in the kick count and reload data when updated
     kickCountNotifier.addListener(() {
-      _loadKickData();  // Reload data when a new kick is saved
-      _incrementDailyCount();  // Increment the daily count
+      _loadKickData(); // Reload data when a new kick is saved
+      _incrementDailyCount(); // Increment the daily count
     });
+
+    // Subscribe to BLE connection status
+    bleConnectionStatus.addListener(() {
+      if (!bleConnectionStatus.value) {
+        print("BLE device disconnected");
+        _handleDisconnection();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    // Cancel the timer when the widget is disposed
+    _bleTimer?.cancel();
+    bleConnectionStatus.removeListener(() {});
+    super.dispose();
+  }
+
+  // Manually check BLE connection status every 10 seconds
+  Future<void> _checkBleConnectionStatus() async {
+    if (_connectedDevice != null) {
+      final connectionState = await _connectedDevice!.state.first;
+      if (connectionState != BluetoothConnectionState.connected) {
+        print('BLE device is not connected.');
+        bleConnectionStatus.value = false; // Update connection status
+      } else {
+        print('BLE device is connected.');
+      }
+    }
+  }
+
+  // Set the connected device when a connection is made in the BLE scan screen
+  void setConnectedDevice(BluetoothDevice device) {
+    _connectedDevice = device;
+    bleConnectionStatus.value = true; // Update the connection status
+    print('Device set as connected: ${device.name}');
+  }
+
+  // Handle disconnection logic
+  void _handleDisconnection() {
+    // Show a dialog or perform any necessary action when disconnected
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: Text("Connection Lost"),
+          content: Text("The BLE device has been disconnected."),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop(); // Close the dialog
+              },
+              child: Text("OK"),
+            ),
+          ],
+        );
+      },
+    );
+    // Reset the connected device reference
+    _connectedDevice = null;
   }
 
   Future<void> _loadKickData() async {
@@ -37,8 +106,8 @@ class _HomePageState extends State<HomePage> {
 
   Future<void> _checkDailyReset() async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
-    String? lastDate = prefs.getString('last_date');  // Get the last stored date
-    String today = DateFormat('yyyy-MM-dd').format(DateTime.now());  // Get today's date
+    String? lastDate = prefs.getString('last_date'); // Get the last stored date
+    String today = DateFormat('yyyy-MM-dd').format(DateTime.now()); // Get today's date
 
     // Check if the app was last opened on a different day
     if (lastDate == null || lastDate != today) {
@@ -136,7 +205,7 @@ class _HomePageState extends State<HomePage> {
                     ),
                     const SizedBox(height: 20),
                     ValueListenableBuilder<bool>(
-                      valueListenable: bleConnectionStatus,  // Listen to connection status
+                      valueListenable: bleConnectionStatus, // Listen to connection status
                       builder: (context, isConnected, child) {
                         return Text(
                           isConnected ? 'BLE Device Connected' : 'BLE Device Disconnected',
@@ -152,7 +221,7 @@ class _HomePageState extends State<HomePage> {
                     ElevatedButton(
                       onPressed: () {
                         Navigator.pushNamed(context, '/ble_scan').then((_) {
-                          _loadKickData();  // Reload kickData after returning from BLE scan
+                          _loadKickData(); // Reload kickData after returning from BLE scan
                         });
                       },
                       child: const Text('Scan BLE for update'),
