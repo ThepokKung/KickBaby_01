@@ -81,7 +81,14 @@ class _ScanPageState extends State<ScanPage> {
     scanSubscription?.cancel();
     isScanningSubscription?.cancel();
 
-    FlutterBluePlus.startScan(timeout: const Duration(seconds: 4));
+    if (await FlutterBluePlus.isSupported == false) {
+      print("Bluetooth not supported by this device");
+      return;
+    }
+
+    FlutterBluePlus.startScan(
+        withNames: ["BabyKick_01", "BabyKick_02"],
+        timeout: const Duration(seconds: 4));
     setState(() {
       isScanning = true;
       scanResults.clear(); // Clear previous results on a new scan
@@ -118,7 +125,8 @@ class _ScanPageState extends State<ScanPage> {
     });
 
     try {
-      await device.connect();
+      print('Attempting to connect to ${device.name}');
+      await device.connect(timeout: Duration(seconds: 10)); // Added timeout
       print('Connected to ${device.name}');
 
       // Notify that BLE is connected
@@ -158,7 +166,6 @@ class _ScanPageState extends State<ScanPage> {
   void _listenForDisconnection(BluetoothDevice device) {
     deviceStateSubscription = device.connectionState.listen((state) {
       if (state == BluetoothConnectionState.disconnected) {
-        // Corrected condition
         print('Device disconnected.');
         bleConnectionStatus.value = false; // Update status to disconnected
         _disconnectDevice(); // Clean up state
@@ -168,12 +175,21 @@ class _ScanPageState extends State<ScanPage> {
 
   // Handle device disconnection and clean up state
   Future<void> _disconnectDevice() async {
-    setState(() {
-      connectedDevice = null;
-      services.clear();
-      characteristicStream = null;
-    });
-    deviceStateSubscription?.cancel(); // Clean up device state listener
+    try {
+      if (connectedDevice != null) {
+        await connectedDevice!.disconnect(); // Ensure proper disconnection
+        print('Device disconnected successfully.');
+      }
+    } catch (e) {
+      print('Error while disconnecting: $e');
+    } finally {
+      setState(() {
+        connectedDevice = null;
+        services.clear();
+        characteristicStream = null;
+      });
+      deviceStateSubscription?.cancel(); // Clean up device state listener
+    }
   }
 
   Future<void> _subscribeToCharacteristic(
@@ -188,9 +204,6 @@ class _ScanPageState extends State<ScanPage> {
 
       if (receivedString.isNotEmpty && receivedString.trim() != '') {
         _saveKickData(receivedString);
-
-        // Optionally send data back after receiving data
-        _sendStringToDevice('Response from App!');
       } else {
         print('Received null or empty data. Skipping save.');
       }

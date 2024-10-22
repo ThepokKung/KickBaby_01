@@ -38,7 +38,7 @@ class _DataPageState extends State<DataPage> {
               itemBuilder: (context, index) {
                 // Parsing and formatting the timestamp
                 DateTime timestamp = DateTime.parse(kickData[index]['timestamp']);
-                String formattedTimestamp = DateFormat('yyyy-MM-dd HH:mm:ss').format(timestamp);
+                String formattedTimestamp = DateFormat('dd-MM HH:mm:ss').format(timestamp);
 
                 return ListTile(
                   title: Text('Data: ${kickData[index]['data']}'),
