@@ -16,25 +16,16 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> {
   List<Map<String, dynamic>> kickData = [];
   int dailyKickCount = 0;
-  Timer? _bleTimer; // Declare a Timer variable
   BluetoothDevice? _connectedDevice; // Keep track of the connected device
+  StreamSubscription<BluetoothDeviceState>?
+      _connectionStateSubscription; // Correct type for BLE state monitoring
+  ValueNotifier<bool> bleConnectionStatus = ValueNotifier<bool>(false);
 
   @override
   void initState() {
     super.initState();
     _loadKickData();
     _checkDailyReset();
-
-    // Set up a periodic check for the BLE connection status
-    _bleTimer = Timer.periodic(Duration(seconds: 10), (timer) {
-      _checkBleConnectionStatus();
-    });
-
-    // Listen to changes in the kick count and reload data when updated
-    kickCountNotifier.addListener(() {
-      _loadKickData(); // Reload data when a new kick is saved
-      _incrementDailyCount(); // Increment the daily count
-    });
 
     // Subscribe to BLE connection status
     bleConnectionStatus.addListener(() {
@@ -43,39 +34,66 @@ class _HomePageState extends State<HomePage> {
         _handleDisconnection();
       }
     });
+
+    // Listen to changes in the kick count and reload data when updated
+    kickCountNotifier.addListener(() {
+      _loadKickData(); // Reload data when a new kick is saved
+      _incrementDailyCount(); // Increment the daily count
+    });
+
+    // Perform an initial check for connected devices
+    _checkConnectedDevices();
   }
 
   @override
   void dispose() {
-    // Cancel the timer when the widget is disposed
-    _bleTimer?.cancel();
-    bleConnectionStatus.removeListener(() {});
+    _connectionStateSubscription?.cancel();
     super.dispose();
   }
 
-  // Manually check BLE connection status every 10 seconds
-  Future<void> _checkBleConnectionStatus() async {
-    if (_connectedDevice != null) {
-      final connectionState = await _connectedDevice!.state.first;
-      if (connectionState != BluetoothConnectionState.connected) {
-        print('BLE device is not connected.');
-        bleConnectionStatus.value = false; // Update connection status
-      } else {
-        print('BLE device is connected.');
-      }
+  // Check for already connected devices
+  Future<void> _checkConnectedDevices() async {
+    List<BluetoothDevice> connectedDevices =
+        await FlutterBluePlus.connectedDevices;
+    if (connectedDevices.isNotEmpty) {
+      setState(() {
+        _connectedDevice =
+            connectedDevices.first; // Set the first connected device
+        bleConnectionStatus.value = true;
+      });
+
+      // Listen for disconnection events
+      _listenForDisconnection(_connectedDevice!);
     }
   }
 
-  // Set the connected device when a connection is made in the BLE scan screen
   void setConnectedDevice(BluetoothDevice device) {
     _connectedDevice = device;
-    bleConnectionStatus.value = true; // Update the connection status
+    bleConnectionStatus.value = true;
+
+    // Listen for disconnection events using device.state
+    _listenForDisconnection(_connectedDevice!);
+
     print('Device set as connected: ${device.name}');
   }
 
-  // Handle disconnection logic
+  // Correctly listen for disconnection events
+  void _listenForDisconnection(BluetoothDevice device) {
+    _connectionStateSubscription?.cancel(); // Cancel any previous listener
+    _connectionStateSubscription =
+        device.state.listen((BluetoothDeviceState state) {
+      if (state == BluetoothConnectionState.disconnected) {
+        print('BLE device disconnected.');
+        bleConnectionStatus.value = false;
+        _handleDisconnection();
+      }
+    });
+  }
+
+ 
+
+  // Handle disconnection
   void _handleDisconnection() {
-    // Show a dialog or perform any necessary action when disconnected
     showDialog(
       context: context,
       builder: (context) {
@@ -93,8 +111,9 @@ class _HomePageState extends State<HomePage> {
         );
       },
     );
-    // Reset the connected device reference
+
     _connectedDevice = null;
+    _connectionStateSubscription?.cancel();
   }
 
   Future<void> _loadKickData() async {
@@ -107,7 +126,8 @@ class _HomePageState extends State<HomePage> {
   Future<void> _checkDailyReset() async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
     String? lastDate = prefs.getString('last_date'); // Get the last stored date
-    String today = DateFormat('yyyy-MM-dd').format(DateTime.now()); // Get today's date
+    String today =
+        DateFormat('yyyy-MM-dd').format(DateTime.now()); // Get today's date
 
     // Check if the app was last opened on a different day
     if (lastDate == null || lastDate != today) {
@@ -141,7 +161,8 @@ class _HomePageState extends State<HomePage> {
     String lastTimestamp = 'No data';
     if (count > 0) {
       DateTime parsedTimestamp = DateTime.parse(kickData.first['timestamp']);
-      lastTimestamp = DateFormat('yyyy-MM-dd HH:mm:ss').format(parsedTimestamp); // Custom format
+      lastTimestamp = DateFormat('yyyy-MM-dd HH:mm:ss')
+          .format(parsedTimestamp); // Custom format
     }
 
     return Scaffold(
@@ -183,32 +204,44 @@ class _HomePageState extends State<HomePage> {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        const Text('Last Timestamp:', style: TextStyle(fontSize: 16)),
-                        Text(lastTimestamp, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                        const Text('Last Timestamp:',
+                            style: TextStyle(fontSize: 16)),
+                        Text(lastTimestamp,
+                            style: const TextStyle(
+                                fontSize: 16, fontWeight: FontWeight.bold)),
                       ],
                     ),
                     const SizedBox(height: 5),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        const Text('Total Count:', style: TextStyle(fontSize: 16)),
-                        Text(count.toString(), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                        const Text('Total Count:',
+                            style: TextStyle(fontSize: 16)),
+                        Text(count.toString(),
+                            style: const TextStyle(
+                                fontSize: 16, fontWeight: FontWeight.bold)),
                       ],
                     ),
                     const SizedBox(height: 5),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        const Text('Daily Count:', style: TextStyle(fontSize: 16)),
-                        Text(dailyKickCount.toString(), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                        const Text('Daily Count:',
+                            style: TextStyle(fontSize: 16)),
+                        Text(dailyKickCount.toString(),
+                            style: const TextStyle(
+                                fontSize: 16, fontWeight: FontWeight.bold)),
                       ],
                     ),
                     const SizedBox(height: 20),
                     ValueListenableBuilder<bool>(
-                      valueListenable: bleConnectionStatus, // Listen to connection status
+                      valueListenable:
+                          bleConnectionStatus, // Listen to connection status
                       builder: (context, isConnected, child) {
                         return Text(
-                          isConnected ? 'BLE Device Connected' : 'BLE Device Disconnected',
+                          isConnected
+                              ? 'BLE Device Connected'
+                              : 'BLE Device Disconnected',
                           style: TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.bold,
@@ -229,7 +262,8 @@ class _HomePageState extends State<HomePage> {
                     const SizedBox(height: 20),
                     ElevatedButton(
                       onPressed: () {
-                        Navigator.pushNamed(context, '/data'); // Navigate to DataPage
+                        Navigator.pushNamed(
+                            context, '/data'); // Navigate to DataPage
                       },
                       child: const Text('View All Data'),
                     ),
